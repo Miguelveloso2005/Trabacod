@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import asyncio
 import pathlib
 import httpx
+from pydantic import BaseModel
 
 app = FastAPI()
 Base = declarative_base()
@@ -33,7 +34,7 @@ async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
 
-# Modelos (igual que antes)
+# Modelos
 class Sucursal(Base):
     __tablename__ = "sucursales"
     id = Column(Integer, primary_key=True, index=True)
@@ -114,7 +115,7 @@ async def admin_html(request: Request):
     admin_path = pathlib.Path("frontend/admin.html")
     return admin_path.read_text(encoding="utf-8")
 
-# --- El resto de tus rutas originales sin cambios ---
+# --- Resto de rutas ---
 
 @app.get("/stocks")
 async def get_stocks(db: AsyncSession = Depends(get_db)):
@@ -215,8 +216,13 @@ async def broadcast_sse(message: str):
 async def sse_endpoint():
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@app.get("/convertir")
-async def convertir_a_usd(monto: float):
+# Modelo para recibir monto en /convert/usd
+class ConversionRequest(BaseModel):
+    amount: float
+
+@app.post("/convert/usd")
+async def convertir_a_usd(data: ConversionRequest):
+    monto = data.amount
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get("https://mindicador.cl/api/dolar")
@@ -225,27 +231,5 @@ async def convertir_a_usd(monto: float):
             valor_usd = data["serie"][0]["valor"]
             convertido = round(monto / valor_usd, 2)
             return {"clp": monto, "usd": convertido, "valor_dolar": valor_usd}
-    except Exception as e:
-        return {"error": str(e)}
-
-from pydantic import BaseModel
-
-class AmountRequest(BaseModel):
-    amount: float
-
-@app.post("/convert/usd")
-async def convertir_usd(data: AmountRequest):
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get("https://mindicador.cl/api/dolar")
-            response.raise_for_status()
-            data_api = response.json()
-            valor_dolar = data_api["serie"][0]["valor"]
-            monto_usd = round(data.amount / valor_dolar, 2)
-            return {
-                "amount_clp": data.amount,
-                "amount_usd": monto_usd,
-                "valor_dolar": valor_dolar
-            }
     except Exception as e:
         return {"error": str(e)}
