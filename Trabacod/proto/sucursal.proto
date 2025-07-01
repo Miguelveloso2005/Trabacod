@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package sucursal;
+
+// Mensaje para una sucursal
+message Sucursal {
+  int32 id       = 1;
+  string nombre  = 2;
+  int32 cantidad = 3;
+  float precio   = 4;
+}
+
+// Peticion vacia (para obtener todo)
+message Vacio {}
+
+// Lista de sucursales
+message ListaSucursales {
+  repeated Sucursal sucursales = 1;
+}
+
+// Mensaje para agregar una sucursal
+message NuevaSucursal {
+  string nombre  = 1;
+  int32 cantidad = 2;
+  float precio   = 3;
+}
+
+// Resultado de una operacion
+message Resultado {
+  bool ok       = 1;
+  string mensaje = 2;
+}
+
+// Servicio gRPC
+service ServicioSucursal {
+  rpc ObtenerSucursales (Vacio) returns (ListaSucursales);
+  rpc AgregarSucursal   (NuevaSucursal) returns (Resultado);
+}

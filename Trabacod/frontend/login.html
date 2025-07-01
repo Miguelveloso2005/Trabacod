@@ -1,8 +1,54 @@
+<!-- frontend/login.html -->
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8" /><title>Panel Admin</title></head>
+<head>
+  <meta charset="UTF-8">
+  <title>Login</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .login-container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    input {
+      display: block;
+      margin: 10px auto;
+      padding: 10px;
+      width: 80%;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #28a745;
+      border: none;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+  </style>
+</head>
 <body>
-<h1>Bienvenido al Panel Admin</h1>
-<p>Solo usuarios autorizados pueden ver esto.</p>
+  <div class="login-container">
+    <h2>Iniciar sesión</h2>
+    <form method="post" action="/login">
+      <input type="text" name="username" placeholder="Nombre de usuario" required>
+      <input type="password" name="password" placeholder="Contraseña" required>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
 </body>
 </html>

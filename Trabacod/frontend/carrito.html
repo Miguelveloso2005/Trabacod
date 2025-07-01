@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Carrito de compras</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      position: relative;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #ccc;
+      text-align: center;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    .btn {
+      background-color: #28a745;
+      color: white;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background-color: #218838;
+    }
+    #sse-alerta {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background-color: #ffcc00;
+      color: #000;
+      padding: 15px 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      z-index: 1000;
+      display: none;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="sse-alerta">⚠️ ¡Stock bajo en una sucursal!</div>
+
+  <h2>Carrito de Compras</h2>
+  <p><strong>Sucursal seleccionada:</strong> <span id="sucursal-nombre">Cargando...</span></p>
+
+  <table id="carrito-table">
+    <thead>
+      <tr>
+        <th>Producto</th>
+        <th>Precio (CLP)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <p><strong>Total:</strong> <span id="total">0</span> CLP</p>
+  <p><strong>Total en dólares:</strong> <span id="total-usd">Calculando...</span> USD</p>
+
+  <button class="btn" onclick="pagar()">Pagar</button>
+
+  <script>
+    const carrito = JSON.parse(localStorage.getItem('carrito')) || [];
+    const sucursalId = localStorage.getItem('sucursalId');
+
+    async function cargarSucursal() {
+      try {
+        const res = await fetch('/stocks');
+        const productos = await res.json();
+        const sucursal = productos.find(p => p.id == sucursalId);
+        document.getElementById('sucursal-nombre').textContent = sucursal ? sucursal.sucursal : 'No seleccionada';
+      } catch (err) {
+        console.error("Error cargando sucursal:", err);
+      }
+    }
+
+    function cargarCarrito() {
+      const tbody = document.querySelector('#carrito-table tbody');
+      tbody.innerHTML = '';
+      let total = 0;
+
+      carrito.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${item.nombre}</td><td>$${item.precio}</td>`;
+        tbody.appendChild(tr);
+        total += item.precio;
+      });
+
+      document.getElementById('total').textContent = total.toLocaleString();
+      convertirADolares(total);
+    }
+
+    async function convertirADolares(totalCLP) {
+      try {
+        const res = await fetch('/convert/usd', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: totalCLP })
+        });
+
+        const data = await res.json();
+        if (data.usd) {
+          document.getElementById('total-usd').textContent = `$${data.usd}`;
+        } else {
+          document.getElementById('total-usd').textContent = 'Error al convertir';
+        }
+      } catch (err) {
+        console.error("Error al convertir a USD:", err);
+        document.getElementById('total-usd').textContent = 'Error';
+      }
+    }
+
+    async function pagar() {
+      if (!sucursalId) {
+        alert("Primero selecciona una sucursal en la página de productos.");
+        return;
+      }
+
+      const cantidad = carrito.length;
+      if (cantidad === 0) {
+        alert("Tu carrito está vacío.");
+        return;
+      }
+
+      const totalCLP = carrito.reduce((sum, item) => sum + item.precio, 0);
+      if (totalCLP <= 0) {
+  alert("❌ El total debe ser mayor a $0.");
+  return;
+}
+
+
+      // Validar stock antes de proceder
+      try {
+        const res = await fetch('/stocks');
+        const data = await res.json();
+        const sucursal = data.find(p => p.id == sucursalId);
+
+        if (!sucursal) {
+          alert("Sucursal no encontrada.");
+          return;
+        }
+
+        if (sucursal.cantidad < cantidad) {
+          alert(`❌ Stock insuficiente. Solo quedan ${sucursal.cantidad} productos en esta sucursal.`);
+          return;
+        }
+      } catch (err) {
+        alert("❌ Error al validar stock.");
+        console.error(err);
+        return;
+      }
+
+      const confirmacion = confirm(`¿Deseas pagar ${cantidad} productos por un total de $${totalCLP}?`);
+      if (!confirmacion) return;
+
+      // 1. Disminuir stock
+      try {
+        const resStock = await fetch('/stock/disminuir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sucursalId: parseInt(sucursalId),
+            cantidad: cantidad
+          })
+        });
+
+        const dataStock = await resStock.json();
+        if (!dataStock.success) {
+          alert("❌ Error al disminuir stock: " + dataStock.msg);
+          return;
+        }
+      } catch (err) {
+        alert("❌ Error de red al disminuir stock.");
+        console.error(err);
+        return;
+      }
+
+      // 2. Iniciar pago con Transbank
+      try {
+        const resPago = await fetch('/pago', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: totalCLP })
+        });
+
+        if (!resPago.redirected) {
+          const text = await resPago.text();
+          alert("Error iniciando pago:\n" + text);
+          return;
+        }
+
+        window.location.href = resPago.url;
+      } catch (err) {
+        alert("❌ Error iniciando pago.");
+        console.error(err);
+      }
+    }
+
+    function conectarSSE() {
+      const eventSource = new EventSource('/sse');
+      eventSource.onmessage = function(event) {
+        const alerta = document.getElementById('sse-alerta');
+        alerta.textContent = `⚠️ ${event.data}`;
+        alerta.style.display = 'block';
+        setTimeout(() => {
+          alerta.style.display = 'none';
+        }, 8000);
+      };
+      eventSource.onerror = function(err) {
+        console.warn("❌ SSE desconectado", err);
+      };
+    }
+
+    cargarSucursal();
+    cargarCarrito();
+    conectarSSE();
+  </script>
+
+</body>
+</html>

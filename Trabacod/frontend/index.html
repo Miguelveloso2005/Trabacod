@@ -1,253 +1,150 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <title>Zapatex</title>
+  <meta charset="UTF-8">
+  <title>Productos</title>
   <style>
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f0f4f8;
-      color: #333;
-      margin: 0; padding: 0;
-      display: flex; flex-direction: column; align-items: center;
-      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      padding: 20px;
     }
-    header {
-      background: #004080;
-      color: white;
-      padding: 20px 0;
-      width: 100%;
-      text-align: center;
-      font-size: 2rem;
-      font-weight: bold;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-      margin-bottom: 30px;
-    }
-    main {
-      width: 90%;
-      max-width: 800px;
-      background: white;
-      padding: 20px 30px;
-      border-radius: 10px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    h2 {
-      color: #004080;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 30px;
-    }
-    th, td {
-      padding: 10px;
-      border-bottom: 1px solid #ddd;
+
+    .producto {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px;
+      display: inline-block;
+      width: 200px;
       text-align: center;
     }
-    th {
-      background-color: #004080;
-      color: white;
-    }
-    input[type="number"], select {
-      padding: 6px;
-      width: 120px;
-      margin-right: 10px;
-    }
+
     button {
-      padding: 8px 16px;
-      background-color: #004080;
+      background-color: #007bff;
       color: white;
       border: none;
-      border-radius: 6px;
+      padding: 8px 12px;
+      border-radius: 5px;
       cursor: pointer;
-      font-weight: bold;
     }
+
     button:hover {
-      background-color: #003060;
+      background-color: #0056b3;
     }
-    #conversion-result, #stock-msg {
+
+    #sucursal-select {
+      margin-bottom: 20px;
+      padding: 8px;
+      font-size: 16px;
+    }
+
+    #alerta-stock {
+      display: none;
+      background-color: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+      padding: 12px 20px;
+      margin-bottom: 20px;
+      border-radius: 5px;
       font-weight: bold;
-      margin-top: 10px;
-    }
-    #conversion-result {
-      color: #006600;
-    }
-    #stock-msg {
-      color: #cc0000;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
   </style>
 </head>
 <body>
-  <header>Zapatex - Gestión de Stock y Conversión</header>
-  <main>
-    <section>
-      <h2>Stock Actual</h2>
-      <table id="stock-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Sucursal</th>
-            <th>Cantidad</th>
-            <th>Precio (CLP)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Se llenará con JS -->
-        </tbody>
-      </table>
-    </section>
 
-    <section>
-      <h2>Disminuir Stock</h2>
-      <select id="sucursal-select"></select>
-      <input id="cantidad-input" type="number" min="1" placeholder="Cantidad" />
-      <button onclick="disminuirStock()">Disminuir</button>
-      <div id="stock-msg"></div>
-    </section>
+  <div id="alerta-stock">
+    ⚠️ <span id="mensaje-alerta">Stock bajo</span>
+  </div>
 
-    <section>
-      <h2>Convertir CLP a USD</h2>
-      <input id="clp-input" type="number" placeholder="Monto en CLP" />
-      <button onclick="convertirCLP()">Convertir</button>
-      <div id="conversion-result"></div>
-    </section>
+  <h2>Selecciona una sucursal</h2>
+  <select id="sucursal-select">
+    <option value="">-- Cargando sucursales... --</option>
+  </select>
 
-    <section>
-      <h2>Historial de Disminuciones</h2>
-      <table id="historial-table">
-        <thead>
-          <tr>
-            <th>Sucursal</th>
-            <th>Cantidad</th>
-            <th>Fecha</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Se llenará con JS -->
-        </tbody>
-      </table>
-    </section>
-  </main>
+  <h2>Lista de productos</h2>
+  <div id="productos-container"></div>
+
+  <br>
+  <a href="/carrito.html">Ir al carrito</a>
 
   <script>
-    // Función para cargar stock desde backend
-    async function cargarStock() {
-      const response = await fetch('/stocks');
-      const data = await response.json();
+    // Cargar sucursales al select
+    async function cargarSucursales() {
+      try {
+        const res = await fetch('/stocks');
+        const productos = await res.json();
 
-      const tbody = document.querySelector('#stock-table tbody');
-      tbody.innerHTML = '';
-      data.forEach(item => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${item.id}</td>
-          <td>${item.sucursal}</td>
-          <td>${item.cantidad}</td>
-          <td>${item.precio.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+        const sucursalSelect = document.getElementById('sucursal-select');
+        sucursalSelect.innerHTML = ''; // Limpiar opciones
 
-      const select = document.getElementById('sucursal-select');
-      select.innerHTML = '';
-      data.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.id;
-        option.textContent = item.sucursal;
-        select.appendChild(option);
-      });
-    }
+        productos.forEach(p => {
+          const option = document.createElement('option');
+          option.value = p.id;
+          option.textContent = `${p.sucursal} (Stock: ${p.cantidad})`;
+          sucursalSelect.appendChild(option);
+        });
 
-    async function disminuirStock() {
-      const sucursalId = Number(document.getElementById('sucursal-select').value);
-      const cantidad = Number(document.getElementById('cantidad-input').value);
-      const msgDiv = document.getElementById('stock-msg');
+        sucursalSelect.addEventListener('change', () => {
+          const selectedId = sucursalSelect.value;
+          localStorage.setItem('sucursalId', selectedId);
+        });
 
-      if (!cantidad || cantidad <= 0) {
-        msgDiv.style.color = 'red';
-        msgDiv.textContent = 'Ingrese una cantidad válida';
-        return;
-      }
-
-      const response = await fetch('/stock/disminuir', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ sucursalId, cantidad })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        msgDiv.style.color = 'green';
-        msgDiv.textContent = 'Stock disminuido con éxito';
-        cargarStock();
-        cargarHistorial();
-        document.getElementById('cantidad-input').value = '';
-      } else {
-        msgDiv.style.color = 'red';
-        msgDiv.textContent = 'Error: ' + (data.msg || 'No se pudo disminuir el stock');
+      } catch (error) {
+        console.error("Error al cargar sucursales:", error);
       }
     }
 
-    async function convertirCLP() {
-      const amount = Number(document.getElementById('clp-input').value);
-      if (!amount || amount <= 0) {
-        alert('Ingrese un monto válido en CLP');
-        return;
+    // Cargar productos
+    async function cargarProductos() {
+      try {
+        const res = await fetch('/stocks');
+        const productos = await res.json();
+
+        const contenedor = document.getElementById('productos-container');
+        contenedor.innerHTML = '';
+
+        productos.forEach(p => {
+          const div = document.createElement('div');
+          div.className = 'producto';
+          div.innerHTML = `
+            <h3>${p.sucursal}</h3>
+            <p>Precio: $${p.precio}</p>
+            <p>Stock: ${p.cantidad}</p>
+            <button onclick="agregarAlCarrito(${p.id}, '${p.sucursal}', ${p.precio})">Agregar al carrito</button>
+          `;
+          contenedor.appendChild(div);
+        });
+      } catch (error) {
+        console.error("Error al cargar productos:", error);
       }
-      const response = await fetch('/convert/usd', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ amount })
-      });
-      const data = await response.json();
-      if (data.amount_usd) {
-        document.getElementById('conversion-result').textContent =
-          `${data.amount_clp.toLocaleString()} CLP = ${data.amount_usd.toFixed(2)} USD`;
-      } else {
-        document.getElementById('conversion-result').textContent = 'Error en la conversión';
-      }
     }
 
-    async function cargarHistorial() {
-      const response = await fetch('/historial');
-      const historial = await response.json();
-
-      const tbody = document.querySelector('#historial-table tbody');
-      tbody.innerHTML = '';
-
-      historial.forEach(entry => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${entry.sucursal}</td>
-          <td>${entry.cantidad}</td>
-          <td>${entry.fecha}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+    function agregarAlCarrito(id, nombre, precio) {
+      const carrito = JSON.parse(localStorage.getItem('carrito')) || [];
+      carrito.push({ id, nombre, precio });
+      localStorage.setItem('carrito', JSON.stringify(carrito));
+      alert(`${nombre} agregado al carrito.`);
     }
 
-    function conectarSSE() {
-      const evtSource = new EventSource('/sse');
+    // SSE: recibir alertas de stock bajo
+    const sse = new EventSource('/sse');
+    sse.onmessage = function(event) {
+      const mensaje = event.data;
+      const alertaDiv = document.getElementById('alerta-stock');
+      const mensajeSpan = document.getElementById('mensaje-alerta');
 
-      evtSource.onmessage = function(event) {
-        alert(event.data);
-        cargarStock();
-        cargarHistorial();
-      };
+      mensajeSpan.textContent = mensaje;
+      alertaDiv.style.display = 'block';
 
-      evtSource.onerror = function() {
-        console.error('Error en la conexión SSE');
-        evtSource.close();
-        setTimeout(conectarSSE, 5000);
-      };
-    }
-
-    window.onload = () => {
-      cargarStock();
-      cargarHistorial();
-      conectarSSE();
+      // Ocultar después de 7 segundos
+      setTimeout(() => {
+        alertaDiv.style.display = 'none';
+      }, 7000);
     };
+
+    cargarSucursales();
+    cargarProductos();
   </script>
+
 </body>
-</html>

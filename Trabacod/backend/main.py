@@ -11,6 +11,9 @@ import asyncio
 import pathlib
 import httpx
 from pydantic import BaseModel
+from backend.transbank_rest import iniciar_transaccion, confirmar_transaccion
+import grpc
+from backend.grpc_stubs import sucursal_pb2_grpc, sucursal_pb2
 
 app = FastAPI()
 Base = declarative_base()
@@ -115,13 +118,39 @@ async def admin_html(request: Request):
     admin_path = pathlib.Path("frontend/admin.html")
     return admin_path.read_text(encoding="utf-8")
 
+# Ruta protegida a index.html
+@app.get("/index.html", response_class=HTMLResponse)
+async def index_html(request: Request):
+    if not is_logged_in(request):
+        return RedirectResponse(url="/login", status_code=302)
+    index_path = pathlib.Path("frontend/index.html")
+    return index_path.read_text(encoding="utf-8")
+
+# Ruta protegida a carrito.html
+@app.get("/carrito.html", response_class=HTMLResponse)
+async def carrito_html(request: Request):
+    if not is_logged_in(request):
+        return RedirectResponse(url="/login", status_code=302)
+    carrito_path = pathlib.Path("frontend/carrito.html")
+    return carrito_path.read_text(encoding="utf-8")
+
 # --- Resto de rutas ---
 
 @app.get("/stocks")
-async def get_stocks(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Sucursal))
-    sucursales = result.scalars().all()
-    return [{"id": s.id, "sucursal": s.sucursal, "cantidad": s.cantidad, "precio": s.precio} for s in sucursales]
+async def get_stocks():
+    async with grpc.aio.insecure_channel("localhost:50051") as channel:
+        stub = sucursal_pb2_grpc.ServicioSucursalStub(channel)
+        respuesta = await stub.ObtenerSucursales(sucursal_pb2.Vacio())
+
+        return [
+            {
+                "id": s.id,
+                "sucursal": s.nombre,
+                "cantidad": s.cantidad,
+                "precio": s.precio
+            }
+            for s in respuesta.sucursales
+        ]
 
 @app.post("/stock/disminuir")
 async def disminuir_stock(data: dict, db: AsyncSession = Depends(get_db)):
@@ -136,32 +165,46 @@ async def disminuir_stock(data: dict, db: AsyncSession = Depends(get_db)):
             return {"success": False, "msg": "Sucursal no encontrada"}
         if sucursal.cantidad < cantidad:
             return {"success": False, "msg": "Stock insuficiente"}
+        
         sucursal.cantidad -= cantidad
         disminucion = Disminucion(sucursal=sucursal.sucursal, cantidad=cantidad)
         db.add(disminucion)
         await db.commit()
         await db.refresh(sucursal)
-        if sucursal.cantidad == 0:
-            await broadcast_sse(f"Stock Bajo en {sucursal.sucursal}")
+
+        # Nueva condición: stock menor a 10
+        if sucursal.cantidad < 10:
+            await broadcast_sse(f"⚠️ Stock bajo en {sucursal.sucursal} ({sucursal.cantidad} unidades)")
+
         return {"success": True}
     except SQLAlchemyError as e:
         await db.rollback()
         return {"success": False, "msg": str(e)}
 
+
 @app.post("/sucursal")
-async def agregar_sucursal(data: dict, db: AsyncSession = Depends(get_db)):
-    try:
-        nueva = Sucursal(
-            sucursal=data["sucursal"],
-            cantidad=int(data["cantidad"]),
-            precio=float(data["precio"])
+async def agregar_sucursal(data: dict):
+    # 1. Validaciones mínimas en el front/back
+    nombre   = data.get("sucursal")
+    cantidad = data.get("cantidad")
+    precio   = data.get("precio")
+
+    if not nombre or not isinstance(cantidad, int) or not isinstance(precio, (int, float)):
+        return {"success": False, "msg": "Datos inválidos"}
+
+    # 2. Llamada gRPC
+    async with grpc.aio.insecure_channel("localhost:50051") as channel:
+        stub = sucursal_pb2_grpc.ServicioSucursalStub(channel)
+        req  = sucursal_pb2.NuevaSucursal(
+            nombre=nombre,
+            cantidad=cantidad,
+            precio=float(precio)
         )
-        db.add(nueva)
-        await db.commit()
-        return {"success": True}
-    except Exception as e:
-        await db.rollback()
-        return {"success": False, "msg": str(e)}
+        resp = await stub.AgregarSucursal(req)
+
+    # 3. Respuesta unificada para tu frontend
+    return {"success": resp.ok, "msg": resp.mensaje}
+
 
 @app.put("/sucursal/{id}")
 async def actualizar_precio(id: int, data: dict, db: AsyncSession = Depends(get_db)):
@@ -233,3 +276,29 @@ async def convertir_a_usd(data: ConversionRequest):
             return {"clp": monto, "usd": convertido, "valor_dolar": valor_usd}
     except Exception as e:
         return {"error": str(e)}
+    
+
+class PagoRequest(BaseModel):
+    amount: float
+
+# Ruta para iniciar el pago
+@app.post("/pago")
+async def crear_pago(data: PagoRequest):
+    amount = data.amount
+    return_url = "http://localhost:8000/confirmacion"
+    session_id = "sesion123"
+    buy_order = f"orden-{datetime.utcnow().timestamp()}"
+    trans = await iniciar_transaccion(amount, buy_order, session_id, return_url)
+    return RedirectResponse(url=trans["url"] + "?token_ws=" + trans["token"], status_code=302)
+
+# Ruta para confirmar el pago después de Transbank
+@app.get("/confirmacion")
+async def confirmar_pago(request: Request):
+    token_ws = request.query_params.get("token_ws")
+    if not token_ws:
+        return HTMLResponse("<h3>❌ Pago cancelado</h3>")
+    resp = await confirmar_transaccion(token_ws)
+    if resp["status"] == "AUTHORIZED":
+        return HTMLResponse("<h3>✅ Pago aprobado</h3>")
+    else:
+        return HTMLResponse(f"<h3>❌ Pago rechazado. Estado: {resp['status']}</h3>")
